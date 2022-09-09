@@ -11,7 +11,7 @@ from synthtiger.components.component import Component
 
 
 class GaussianBlur(Component):
-    def __init__(self, sigma=(1, 2)):
+    def __init__(self, sigma=(1, 1)):
         super().__init__()
         self.sigma = sigma
 

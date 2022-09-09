@@ -11,7 +11,7 @@ from synthtiger.components.component import Component
 
 
 class MedianBlur(Component):
-    def __init__(self, k=(1, 3)):
+    def __init__(self, k=(1, 1)):
         super().__init__()
         self.k = k
 

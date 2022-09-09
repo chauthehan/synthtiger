@@ -11,7 +11,7 @@ corpus:
   weights: [1, 0]
   args:
     # length augmentable corpus
-    - paths: [resources/corpus/mjsynth.txt, resources/corpus/synthtext.txt]
+    - paths: [resources/corpus/synthtext.txt, resources/korea.txt]
       weights: [1, 1]
       min_length: 1
       max_length: 25
@@ -25,10 +25,10 @@ corpus:
       max_length: 25
       textcase: [lower, upper, capitalize]
       augmentation: 0
-      augmentation_charset: resources/charset/alphanum_special.txt
+      augmentation_charset: resources/ko_charset/ahn_b.txt
 
 font:
-  paths: [resources/font]
+  paths: [resources/ko_font]
   weights: [1]
   size: [40, 80]
   bold: 0.5

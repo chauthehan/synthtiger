@@ -14,16 +14,16 @@ from synthtiger import components, layers, templates, utils
 
 BLEND_MODES = [
     "normal",
-    "multiply",
+    # "multiply", dead
     "screen",
-    "overlay",
+    # "overlay", dead
     "hard_light",
-    "soft_light",
-    "dodge",
-    "divide",
+    # "soft_light", dead
+    # "dodge", dead
+    # "divide",dead
     "addition",
     "difference",
-    "darken_only",
+    # "darken_only", dead
     "lighten_only",
 ]
 
@@ -106,25 +106,45 @@ class SynthTiger(templates.Template):
         midground = np.random.rand() < self.midground
         fg_color, mg_color, bg_color, fg_style, mg_style = self._generate_color()
 
-        fg_image, label = self._generate_fg(fg_color, fg_style)
-        bg_image = self._generate_bg(fg_image.shape[:2][::-1], bg_color)
+        fg_image, mask_fg_image, label, char_bboxes, word_bbox  = self._generate_fg(fg_color, fg_style)
+
+        bg_image = self._generate_bg(fg_image.shape[:2][::-1], bg_color, False)
+
+        mask_color  = {'gray': 0, 'rgb': (0, 0, 0), 'alpha': 1.0, 'colorize': True}
+        bg_mask =  self._generate_bg(fg_image.shape[:2][::-1], mask_color, True)
 
         if midground:
             fg_mask = _create_mask(fg_image, self.foreground_mask_pad)
+            mask_fg_mask = _create_mask(mask_fg_image, self.foreground_mask_pad)
+            
             mg_image, _ = self._generate_mg(mg_color, mg_style, fg_mask)
-            bg_image = _blend_images(
-                mg_image, bg_image, visibility_check=self.visibility_check
-            )
+            mask_mg_image, _ = self._generate_mg(mg_color, mg_style, mask_fg_mask)
 
-        image = _blend_images(
-            fg_image, bg_image, visibility_check=self.visibility_check
+            bg_image, out_mask = _blend_images(
+                mg_image, mask_mg_image, bg_image, bg_mask, visibility_check=self.visibility_check
+            )
+        # else:
+        image, out_mask = _blend_images(
+            fg_image, mask_fg_image, bg_image, bg_mask, visibility_check=self.visibility_check
         )
+
         image = self._postprocess_image(image)
+        mask = self._postprocess_image(out_mask)
+
+        # import uuid
+        # name = uuid.uuid1()
+        # image = Image.fromarray(image[..., :3].astype(np.uint8))
+        # image.save('debug/{}_image.jpg'.format(name), quality=quality)
+        # mask = Image.fromarray(mask[..., :3].astype(np.uint8))
+        # mask.save('debug/{}_mask.png'.format(name), quality=quality)
 
         data = {
             "image": image,
             "label": label,
             "quality": quality,
+            "char_bboxes": char_bboxes,
+            "word_bbox": word_bbox,
+            "mask": mask
         }
 
         return data
@@ -138,16 +158,43 @@ class SynthTiger(templates.Template):
         image = data["image"]
         label = data["label"]
         quality = data["quality"]
+        char_bboxes = data["char_bboxes"]
+        word_bbox = data["word_bbox"]
+        mask = data["mask"]
 
         shard = str(idx // 10000)
         image_key = os.path.join("images", shard, f"{idx}.jpg")
         image_path = os.path.join(root, image_key)
-
+        
         os.makedirs(os.path.dirname(image_path), exist_ok=True)
         image = Image.fromarray(image[..., :3].astype(np.uint8))
+        
         image.save(image_path, quality=quality)
 
+
+        image_key_mask = os.path.join("mask", shard, f"{idx}.png")
+        image_path_mask = os.path.join(root, image_key_mask)
+        
+        os.makedirs(os.path.dirname(image_path_mask), exist_ok=True)
+        
+        # mask = Image.fromarray(mask[..., :3].astype(np.uint8))
+        # mask.save(image_path_mask, quality=quality)
+
+
         self.gt_file.write(f"{image_key}\t{label}\n")
+
+        # Get char box label file
+        label_key = os.path.join("labels", shard, f"{idx}.txt")
+        label_path = os.path.join(root, label_key)
+        
+        os.makedirs(os.path.dirname(label_path), exist_ok=True)
+
+        out_f = open(label_path, 'w')
+        out_str_word = '{},{},{},{}\n'.format(word_bbox[0], word_bbox[1], word_bbox[2], word_bbox[3])
+        out_f.write(out_str_word)
+        for char_bbox in char_bboxes:
+            out_str = '{},{},{},{}\n'.format(char_bbox[0], char_bbox[1], char_bbox[2], char_bbox[3])
+            out_f.write(out_str)
 
     def end_save(self, root):
         self.gt_file.close()
@@ -179,15 +226,43 @@ class SynthTiger(templates.Template):
         self.layout.apply(char_layers, {"meta": {"vertical": self.vertical}})
 
         layer = layers.Group(char_layers).merge()
-        self.color.apply([layer], color)
-        self.texture.apply([layer])
-        self.style.apply([layer], style)
-        self.transform.apply([layer])
-        self.fit.apply([layer])
-        self.pad.apply([layer])
-        out = layer.output()
+        layer_mask = layers.Group(char_layers).merge()
 
-        return out, label
+        self.color.apply([layer], color)
+        mask_color  = {'gray': 0, 'rgb': (255, 255, 255), 'alpha': 1.0, 'colorize': True}
+        self.color.apply([layer_mask], mask_color)
+
+        # texture transform only apply for fg image, not mask image
+        meta = self.texture.apply([layer])
+
+        self.style.apply([layer], style)
+        self.style.apply([layer_mask], style)
+        self.style.apply(char_layers, style) # added
+
+        transform = self.transform.sample() # added
+        self.transform.apply([layer], transform) # changed
+        self.transform.apply([layer_mask], transform)
+        self.transform.apply(char_layers, transform) # added
+
+        self.fit.apply([layer])
+        self.fit.apply([layer_mask])
+        self.fit.apply(char_layers) # changed
+
+        meta = self.pad.apply([layer])
+        self.pad.apply([layer_mask], meta)
+
+        out = layer.output()
+        out_m = layer_mask.output()
+
+        # change coordinates
+        for char_layer in char_layers:
+            char_layer.topleft -= layer.topleft
+
+        # get bboxes
+        char_bboxes = [char_layer.bbox for char_layer in char_layers] # [[left, top, width, height], ...]
+        word_bbox = utils.merge_bbox(char_bboxes) # [left, top, width, height]
+
+        return out, out_m, label, char_bboxes, word_bbox
 
     def _generate_mg(self, color, style, mask):
         label = self.corpus.data(self.corpus.sample())
@@ -219,10 +294,11 @@ class SynthTiger(templates.Template):
 
         return out, label
 
-    def _generate_bg(self, size, color):
+    def _generate_bg(self, size, color, mask_mode):
         layer = layers.RectLayer(size)
-        self.color.apply([layer], color)
-        self.texture.apply([layer])
+        if not mask_mode:
+            self.color.apply([layer], color)
+            self.texture.apply([layer])
         out = layer.output()
         return out
 
@@ -233,7 +309,7 @@ class SynthTiger(templates.Template):
         return out
 
 
-def _blend_images(src, dst, blend_mode=None, visibility_check=False):
+def _blend_images(src, src_mask, dst, dst_mask, blend_mode=None, visibility_check=False):
     if blend_mode is not None:
         blend_modes = [blend_mode]
     else:
@@ -241,12 +317,13 @@ def _blend_images(src, dst, blend_mode=None, visibility_check=False):
 
     for blend_mode in blend_modes:
         out = utils.blend_image(src, dst, mode=blend_mode)
+        out_mask = utils.blend_image(src_mask, dst_mask, mode=blend_mode)
         if not visibility_check or _check_visibility(out, src[..., 3]):
             break
     else:
         raise RuntimeError("Text is not visible")
 
-    return out
+    return out, out_mask
 
 
 def _check_visibility(image, mask):
@@ -301,3 +378,24 @@ def _create_mask(image, pad=0):
     out = utils.create_image((width, height))
     out[..., 3] = mask
     return out
+
+def rgba2rgb( rgba, background=(255,255,255) ):
+    row, col, ch = rgba.shape
+
+    if ch == 3:
+        return rgba
+
+    assert ch == 4, 'RGBA image has 4 channels.'
+
+    rgb = np.zeros( (row, col, 3), dtype='float32' )
+    r, g, b, a = rgba[:,:,0], rgba[:,:,1], rgba[:,:,2], rgba[:,:,3]
+
+    a = np.asarray( a, dtype='float32' ) / 255.0
+
+    R, G, B = background
+
+    rgb[:,:,0] = r * a + (1.0 - a) * R
+    rgb[:,:,1] = g * a + (1.0 - a) * G
+    rgb[:,:,2] = b * a + (1.0 - a) * B
+
+    return np.asarray( rgb, dtype='uint8' )

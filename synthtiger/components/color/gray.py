@@ -36,11 +36,12 @@ class Gray(Component):
         return meta
 
     def apply(self, layers, meta=None):
+        
         meta = self.sample(meta)
-
         for layer in layers:
             image = np.empty(layer.image.shape)
             image[..., :] = self.data(meta)
+
             layer.image = utils.blend_image(image, layer.image, mask=True)
 
         return meta

@@ -40,6 +40,16 @@ $ pip install synthtiger
 
 If you see a dependency error when you install or run SynthTIGER, install [dependencies](depends).
 
+## Fix module synthtiger on pypi
+
+In components/wrapper/switch.py
+Replace:
+        if meta == None:
+            meta = self.sample(meta)
+        state = meta["state"]
+        sub_meta = meta["meta"]
+
+
 ## Usage
 
 ```bash
