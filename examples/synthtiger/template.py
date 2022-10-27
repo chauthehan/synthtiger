@@ -177,8 +177,8 @@ class SynthTiger(templates.Template):
         
         os.makedirs(os.path.dirname(image_path_mask), exist_ok=True)
         
-        # mask = Image.fromarray(mask[..., :3].astype(np.uint8))
-        # mask.save(image_path_mask, quality=quality)
+        mask = Image.fromarray(mask[..., :3].astype(np.uint8))
+        mask.save(image_path_mask, quality=quality)
 
 
         self.gt_file.write(f"{image_key}\t{label}\n")

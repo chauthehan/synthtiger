@@ -4,6 +4,7 @@ Copyright (c) 2021-present NAVER Corp.
 MIT license
 """
 
+# python synthtiger/main.py -o results -w 10 -v examples/synthtiger/template.py SynthTiger examples/synthtiger/config_horizontal.yaml -c 1000000
 import argparse
 import pprint
 import time
